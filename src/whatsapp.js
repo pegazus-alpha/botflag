@@ -9,6 +9,7 @@ async function connectToWhatsApp() {
   const sock = makeWASocket({
     auth: state,
     printQRInTerminal: false,
+    shouldIgnoreJid: jid => jid === 'status@broadcast', // ignorer les statuts
   });
 
   sock.ev.on('connection.update', async ({ connection, qr, lastDisconnect }) => {
@@ -32,9 +33,12 @@ async function connectToWhatsApp() {
     const msg = messages[0];
     if (!msg.message || msg.key.fromMe) return;
 
-    // Ignorer les groupes — les JID de groupe contiennent @g.us
-    const isGroup = msg.key.remoteJid.endsWith('@g.us');
-    if (isGroup) return;
+    const jid = msg.key.remoteJid;
+
+    // Ignorer groupes et statuts
+    if (jid.endsWith('@g.us')) return;
+    if (jid === 'status@broadcast') return;
+    if (jid.endsWith('@broadcast')) return;
 
     await handleMessage(sock, msg);
   });
