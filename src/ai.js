@@ -69,9 +69,8 @@ RÈGLES ABSOLUES
 - Ne jamais poser plusieurs questions à la fois
 - Si le prospect est mécontent ou la demande très complexe : [ESCALADE_HUMAIN]
 - Toujours terminer tes phrases correctement
-- Répondre dans la langue du prospect`;
+- Répondre dans la langue du prospect`
 ```
-
 ---
 
 **Exemples de conversations attendues :**
