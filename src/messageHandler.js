@@ -69,7 +69,7 @@ async function handleMessage(sock, msg) {
   } catch (error) {
     console.error('Erreur:', error.message);
     await sock.sendMessage(jid, {
-      text: 'Désolé, une difficulté technique est survenue. Un agent va vous contacter.'
+      text: '🙏 Accordez moi un instant s\'il vous plaitJe vais faire en sorte qu\'un de nos conseillers prenne le relais pour vous accompagner personnellement.'
     });
     await escaladeToHuman(sock, clientPhone, clientName, userText);
     await setEscalade(clientPhone);
