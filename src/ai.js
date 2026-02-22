@@ -1,15 +1,36 @@
-const { SYSTEM_PROMPT } = require('./prompts/systemPrompt');
+const { loadBotContext } = require('./database');
 
 const conversationHistory = new Map();
 
 async function generateResponse(phoneNumber, userMessage) {
+  // Charger le contexte depuis Supabase
+  const { servicesText, faqText, configMap } = await loadBotContext();
+
+  const SYSTEM_PROMPT = `Tu es l'assistant commercial de FLAG TECHNOLOGY, agence digitale à Douala, Cameroun.
+TON SEUL OBJECTIF : convertir le prospect en client. Ne discute pas, qualifie et propose.
+
+SERVICES ET TARIFS :
+${servicesText}
+
+CONNAISSANCES :
+${faqText}
+
+LIEN AUDIT GRATUIT : ${configMap.audit_url}
+Propose systématiquement cet audit comme première étape.
+
+RÈGLES STRICTES :
+- Maximum 3 phrases par réponse
+- Ne jamais inventer de prix ou délais
+- Toujours orienter vers l'audit ou un rendez-vous
+- Si le client hésite : proposer l'audit gratuit
+- Si demande complexe ou client mécontent : [ESCALADE_HUMAIN]
+- Répondre dans la langue du client`;
+
   if (!conversationHistory.has(phoneNumber)) {
     conversationHistory.set(phoneNumber, []);
   }
   const history = conversationHistory.get(phoneNumber);
-
   history.push({ role: 'user', content: userMessage });
-
   if (history.length > 10) history.splice(0, 2);
 
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -28,21 +49,18 @@ async function generateResponse(phoneNumber, userMessage) {
       ],
       max_tokens: 1024,
       temperature: 0.3,
-      stop: null,
     })
   });
 
   const data = await response.json();
 
-  if (!data.choices || !data.choices[0]) {
+  if (!data.choices?.[0]) {
     console.error('Réponse OpenRouter invalide:', JSON.stringify(data));
-    throw new Error('Réponse invalide de OpenRouter');
+    throw new Error('Réponse invalide');
   }
 
   const reply = data.choices[0].message.content;
   history.push({ role: 'assistant', content: reply });
-
-  console.log(`🤖 [${phoneNumber}]: ${reply.substring(0, 80)}...`);
   return reply;
 }
 

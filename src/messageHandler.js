@@ -1,21 +1,36 @@
-const { generateResponse } = require('./ai');
-const { logConversation } = require('./database');
+const { generateResponse, resetHistory } = require('./ai');
+const {
+  logConversation, getClient,
+  upsertClient, setEscalade
+} = require('./database');
 
-const AGENT_PHONE = process.env.AGENT_PHONE + '@s.whatsapp.net';
+const AGENT_JID   = process.env.AGENT_PHONE + '@s.whatsapp.net';
+const SILENCE_MIN = 10; // minutes de silence après intervention agent
 
-// Extraire le numéro propre depuis le JID (ex: 237612345678@s.whatsapp.net)
 function extractPhone(jid) {
   return jid.replace('@s.whatsapp.net', '').replace('@c.us', '');
 }
 
-// Extraire le nom du contact (affiché dans WhatsApp)
 function extractName(msg) {
   return msg.pushName || 'Inconnu';
 }
 
+// Vérifier si le bot doit rester silencieux
+async function isSilent(phone) {
+  const client = await getClient(phone);
+  if (!client) return false;
+  if (!client.escalade && !client.dernier_agent) return false;
+
+  const dernierAgent = new Date(client.dernier_agent);
+  const maintenant   = new Date();
+  const diffMinutes  = (maintenant - dernierAgent) / 1000 / 60;
+
+  return diffMinutes < SILENCE_MIN;
+}
+
 async function handleMessage(sock, msg) {
-  const phoneNumber = msg.key.remoteJid;
-  const clientPhone = extractPhone(phoneNumber);
+  const jid         = msg.key.remoteJid;
+  const clientPhone = extractPhone(jid);
   const clientName  = extractName(msg);
 
   const userText = msg.message?.conversation ||
@@ -23,42 +38,64 @@ async function handleMessage(sock, msg) {
 
   if (!userText.trim()) return;
 
-  console.log(`📨 [${clientName} - +${clientPhone}]: ${userText}`);
+  console.log(`📨 [${clientName} +${clientPhone}]: ${userText}`);
 
-  await sock.sendPresenceUpdate('composing', phoneNumber);
+  // Mettre à jour le client en base
+  await upsertClient(clientPhone, clientName);
+
+  // Vérifier le mode silence
+  if (await isSilent(clientPhone)) {
+    console.log(`🔇 Silence actif pour ${clientName} — bot muet`);
+    return;
+  }
+
+  await sock.sendPresenceUpdate('composing', jid);
 
   try {
-    const aiReply = await generateResponse(phoneNumber, userText);
+    const aiReply = await generateResponse(jid, userText);
 
     if (aiReply.includes('[ESCALADE_HUMAIN]')) {
       const cleanReply = aiReply.replace('[ESCALADE_HUMAIN]', '').trim();
-      await sock.sendMessage(phoneNumber, { text: cleanReply });
+      await sock.sendMessage(jid, { text: cleanReply });
       await escaladeToHuman(sock, clientPhone, clientName, userText);
+      await setEscalade(clientPhone);
+      resetHistory(jid);
     } else {
-      await sock.sendMessage(phoneNumber, { text: aiReply });
+      await sock.sendMessage(jid, { text: aiReply });
     }
 
-    await logConversation(phoneNumber, userText, aiReply);
+    await logConversation(clientPhone, userText, aiReply);
 
   } catch (error) {
-    console.error('Erreur:', error);
-    await sock.sendMessage(phoneNumber, {
-      text: 'Désolé, je rencontre une difficulté technique. Un agent va vous contacter.'
+    console.error('Erreur:', error.message);
+    await sock.sendMessage(jid, {
+      text: 'Désolé, une difficulté technique est survenue. Un agent va vous contacter.'
     });
     await escaladeToHuman(sock, clientPhone, clientName, userText);
+    await setEscalade(clientPhone);
   }
 }
 
 async function escaladeToHuman(sock, clientPhone, clientName, lastMessage) {
-  const message =
-    `⚠️ ESCALADE REQUISE\n` +
-    `👤 Nom    : ${clientName}\n` +
-    `📞 Numéro : +${clientPhone}\n` +
-    `💬 Dernier message : "${lastMessage}"\n\n` +
-    `Veuillez prendre en charge ce client.`;
+  const client = await getClient(clientPhone) || {};
 
-  await sock.sendMessage(AGENT_PHONE, { text: message });
-  console.log(`🔔 Escalade envoyée — ${clientName} (+${clientPhone})`);
+  const typeClient = client.type_client || 'prospect';
+  const firstContact = client.first_contact
+    ? new Date(client.first_contact).toLocaleDateString('fr-FR')
+    : 'aujourd\'hui';
+
+  const message =
+    `🚨 *ESCALADE CLIENT — ACTION REQUISE*\n\n` +
+    `👤 *Nom*       : ${clientName}\n` +
+    `📞 *Numéro*    : +${clientPhone}\n` +
+    `🏷️ *Type*      : ${typeClient}\n` +
+    `📅 *1er contact*: ${firstContact}\n\n` +
+    `💬 *Dernier message* :\n"${lastMessage}"\n\n` +
+    `⚡ Le bot est désormais silencieux.\n` +
+    `Répondez directement à ce client sur WhatsApp.`;
+
+  await sock.sendMessage(AGENT_JID, { text: message });
+  console.log(`🔔 Escalade — ${clientName} (+${clientPhone})`);
 }
 
 module.exports = { handleMessage };
