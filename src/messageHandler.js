@@ -1,8 +1,9 @@
-const { generateResponse, resetHistory } = require('./ai');
+const { generateResponse } = require('./ai');
 const {
   logConversation, getClient,
-  upsertClient, setEscalade
+  upsertClient, setEscalade, resetHistory
 } = require('./database');
+
 
 const AGENT_JID   = process.env.AGENT_PHONE + '@s.whatsapp.net';
 const SILENCE_MIN = 10; // minutes de silence après intervention agent

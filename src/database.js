@@ -67,9 +67,38 @@ async function setDernierAgent(phone) {
     .upsert({ phone, dernier_agent: new Date().toISOString() },
              { onConflict: 'phone' });
 }
+// Charger l'historique d'un client
+async function loadHistory(phone) {
+  const { data, error } = await supabase
+    .from('historique')
+    .select('role, content')
+    .eq('phone', phone)
+    .order('created_at', { ascending: true })
+    .limit(20); // 10 derniers échanges
 
+  if (error) {
+    console.error('Erreur chargement historique:', error.message);
+    return [];
+  }
+  return data || [];
+}
+
+// Sauvegarder un message dans l'historique
+async function saveMessage(phone, role, content) {
+  const { error } = await supabase
+    .from('historique')
+    .insert({ phone, role, content });
+
+  if (error) console.error('Erreur sauvegarde historique:', error.message);
+}
+
+// Réinitialiser l'historique d'un client
+async function resetHistory(phone) {
+  await supabase.from('historique').delete().eq('phone', phone);
+}
 module.exports = {
   connectDB, loadBotContext,
   logConversation, getClient, upsertClient,
-  setEscalade, setDernierAgent
+  setEscalade, setDernierAgent,
+  loadHistory, saveMessage, resetHistory
 };
