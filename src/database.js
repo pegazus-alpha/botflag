@@ -96,9 +96,43 @@ async function saveMessage(phone, role, content) {
 async function resetHistory(phone) {
   await supabase.from('historique').delete().eq('phone', phone);
 }
+// Lire l'état du bot
+async function isBotActif() {
+  const { data } = await supabase
+    .from('config')
+    .select('valeur')
+    .eq('cle', 'bot_actif')
+    .single();
+  return data?.valeur === 'true';
+}
+
+// Changer l'état du bot
+async function setBotActif(actif) {
+  await supabase
+    .from('config')
+    .upsert({ cle: 'bot_actif', valeur: actif ? 'true' : 'false' },
+             { onConflict: 'cle' });
+}
+
+// Sauvegarder un apprentissage
+async function saveLesson(phone, context, insight) {
+  await supabase.from('learnings').insert({ phone, context, insight });
+}
+
+// Charger les apprentissages récents
+async function loadLessons() {
+  const { data } = await supabase
+    .from('learnings')
+    .select('insight')
+    .order('created_at', { ascending: false })
+    .limit(10);
+  return data?.map(l => l.insight).join('\n') || '';
+}
 module.exports = {
   connectDB, loadBotContext,
   logConversation, getClient, upsertClient,
   setEscalade, setDernierAgent,
-  loadHistory, saveMessage, resetHistory
+  loadHistory, saveMessage, resetHistory,
+  isBotActif, setBotActif,
+  saveLesson, loadLessons
 };
