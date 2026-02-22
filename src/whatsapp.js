@@ -6,14 +6,6 @@ const { setDernierAgent, isBotActif, setBotActif } = require('./database');
 
 const AGENT_PHONE = process.env.AGENT_PHONE + '@s.whatsapp.net';
 
-// Commandes disponibles
-const COMMANDES = `
-*Commandes disponibles :*
-!bot-off — désactiver le bot
-!bot-on  — activer le bot
-!bot-status — voir l'état du bot
-`;
-
 async function connectToWhatsApp() {
   const { state, saveCreds } = await useMultiFileAuthState('./auth_info');
 
@@ -30,9 +22,8 @@ async function connectToWhatsApp() {
     }
     if (connection === 'open') {
       console.log('✅ Bot connecté à WhatsApp !');
-      // Notifier l'agent que le bot est en ligne
       await sock.sendMessage(AGENT_PHONE, {
-        text: '🟢 *Bot FLAG TECHNOLOGY en ligne*\n\nTapez !bot-off pour désactiver ou !bot-status pour voir l\'état.'
+        text: '🟢 *Bot FLAG TECHNOLOGY en ligne*\n\n*Commandes disponibles :*\n!bot-off — désactiver le bot\n!bot-on — activer le bot\n!bot-status — voir l\'état'
       });
     }
     if (connection === 'close') {
@@ -48,20 +39,22 @@ async function connectToWhatsApp() {
     const msg = messages[0];
     if (!msg.message) return;
 
-    const jid = msg.key.remoteJid;
+    const jid  = msg.key.remoteJid;
+    const text = msg.message?.conversation ||
+                 msg.message?.extendedTextMessage?.text || '';
 
     // Ignorer groupes et statuts
     if (jid.endsWith('@g.us')) return;
     if (jid === 'status@broadcast') return;
     if (jid.endsWith('@broadcast')) return;
 
-    const text = msg.message?.conversation ||
-                 msg.message?.extendedTextMessage?.text || '';
-
-    // Messages de L'AGENT (fromMe = vous écrivez depuis votre téléphone)
+    // Messages de l'agent (fromMe = vous écrivez depuis votre téléphone)
     if (msg.key.fromMe) {
-      // Commandes de contrôle — envoyées à vous-même (chat "Message vous-même")
-      if (jid === AGENT_PHONE) {
+
+      // Détecter les commandes peu importe le JID
+      if (text.startsWith('!bot')) {
+        console.log(`⌨️ Commande reçue : ${text}`);
+
         if (text === '!bot-off') {
           await setBotActif(false);
           await sock.sendMessage(AGENT_PHONE, { text: '🔴 Bot désactivé. Tapez !bot-on pour réactiver.' });
@@ -75,10 +68,11 @@ async function connectToWhatsApp() {
         if (text === '!bot-status') {
           const actif = await isBotActif();
           await sock.sendMessage(AGENT_PHONE, {
-            text: `État du bot : ${actif ? '🟢 Actif' : '🔴 Désactivé'}\n${COMMANDES}`
+            text: `État du bot : ${actif ? '🟢 Actif' : '🔴 Désactivé'}\n\n*Commandes :*\n!bot-off — désactiver\n!bot-on — activer\n!bot-status — état`
           });
           return;
         }
+        return;
       }
 
       // Vous écrivez à un client — activer le silence
@@ -88,7 +82,7 @@ async function connectToWhatsApp() {
       return;
     }
 
-    // Message d'un client
+    // Message d'un client — traiter normalement
     await handleMessage(sock, msg);
   });
 }
