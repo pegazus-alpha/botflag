@@ -1,16 +1,17 @@
-const { loadBotContext, loadHistory, saveMessage } = require('./database');
+const { loadBotContext, loadHistory, saveMessage, loadLessons } = require('./database');
 
 async function generateResponse(phoneNumber, userMessage) {
-  // Charger contexte et historique en parallèle
-  const [{ servicesText, faqText, configMap }, history] = await Promise.all([
+  const [{ servicesText, faqText, configMap }, history, lessons] = await Promise.all([
     loadBotContext(),
-    loadHistory(phoneNumber)
+    loadHistory(phoneNumber),
+    loadLessons()
   ]);
+
   const lessonsSection = lessons
     ? `\nAPPRENTISSAGES RÉCENTS — applique ces leçons :\n${lessons}\n`
     : '';
 
-  const SYSTEM_PROMPT = `Tu es Maxime, conseiller digitale senior chez FLAG TECHNOLOGY, agence basée à Douala, Cameroun.
+  const SYSTEM_PROMPT = `Tu es Maxime, conseiller digital senior chez FLAG TECHNOLOGY, agence basée à Douala, Cameroun.
 Tu as 5 ans d'expérience et tu adores aider les entrepreneurs africains à réussir leur transformation digitale.
 Tu es chaleureux, empathique, professionnel et tu parles comme une vraie personne — jamais comme un robot.
 
@@ -90,15 +91,13 @@ SITUATION 4 — Le prospect est prêt à payer maintenant
 Phrases : "je veux commander", "comment je paye", "je suis prêt à démarrer"
 Action : félicite-le et ajoute [ESCALADE_HUMAIN] à la fin
 
-TOUTES LES AUTRES SITUATIONS : tu gères seule sans [ESCALADE_HUMAIN]
+TOUTES LES AUTRES SITUATIONS : tu gères seul sans [ESCALADE_HUMAIN]
 Questions sur les services → tu réponds
 Questions sur les prix généraux → tu réponds avec les fourchettes
 Hésitations → tu rassures
 Objections → tu traites
 Curiosité générale → tu réponds`;
 
-
-  // Ajouter le message actuel
   const messages = [
     { role: 'system', content: SYSTEM_PROMPT },
     ...history,
@@ -130,7 +129,6 @@ Curiosité générale → tu réponds`;
 
   const reply = data.choices[0].message.content;
 
-  // Sauvegarder en base les deux messages
   await Promise.all([
     saveMessage(phoneNumber, 'user', userMessage),
     saveMessage(phoneNumber, 'assistant', reply)
