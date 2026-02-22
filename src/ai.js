@@ -26,8 +26,9 @@ async function generateResponse(phoneNumber, userMessage) {
         { role: 'system', content: SYSTEM_PROMPT },
         ...history
       ],
-      max_tokens: 300,
+      max_tokens: 1024,
       temperature: 0.3,
+      stop: null,
     })
   });
 
