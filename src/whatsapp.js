@@ -2,6 +2,7 @@ const { default: makeWASocket, useMultiFileAuthState,
         DisconnectReason } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
 const { handleMessage } = require('./messageHandler');
+const { setDernierAgent } = require('./database');
 
 async function connectToWhatsApp() {
   const { state, saveCreds } = await useMultiFileAuthState('./auth_info');
@@ -9,7 +10,7 @@ async function connectToWhatsApp() {
   const sock = makeWASocket({
     auth: state,
     printQRInTerminal: false,
-    shouldIgnoreJid: jid => jid === 'status@broadcast', // ignorer les statuts
+    shouldIgnoreJid: jid => jid === 'status@broadcast',
   });
 
   sock.ev.on('connection.update', async ({ connection, qr, lastDisconnect }) => {
@@ -31,7 +32,7 @@ async function connectToWhatsApp() {
 
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
-    if (!msg.message || msg.key.fromMe) return;
+    if (!msg.message) return;
 
     const jid = msg.key.remoteJid;
 
@@ -40,6 +41,15 @@ async function connectToWhatsApp() {
     if (jid === 'status@broadcast') return;
     if (jid.endsWith('@broadcast')) return;
 
+    // Si c'est VOUS (l'agent) qui écrivez — mettre le silence
+    if (msg.key.fromMe) {
+      const clientPhone = jid.replace('@s.whatsapp.net', '').replace('@c.us', '');
+      console.log(`👤 Agent a écrit à ${clientPhone} — silence activé 10 min`);
+      await setDernierAgent(clientPhone);
+      return;
+    }
+
+    // Sinon c'est un message client — traiter normalement
     await handleMessage(sock, msg);
   });
 }
