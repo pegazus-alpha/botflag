@@ -17,9 +17,19 @@ function extractName(msg) {
 }
 
 async function isSilent(phone) {
-  const client = await getClient(phone);
-  if (!client?.dernier_agent) return false;
-  const diff = (new Date() - new Date(client.dernier_agent)) / 1000 / 60;
+  const { data, error } = await require('./database').supabase
+    .from('clients')
+    .select('dernier_agent, escalade')
+    .eq('phone', phone)
+    .single();
+
+  console.log(`🔍 isSilent [${phone}]:`, data, error?.message);
+
+  if (!data?.dernier_agent) return false;
+
+  const diff = (new Date() - new Date(data.dernier_agent)) / 1000 / 60;
+  console.log(`⏱️ Silence depuis : ${diff.toFixed(1)} min`);
+
   return diff < SILENCE_MIN;
 }
 

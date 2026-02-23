@@ -129,6 +129,7 @@ async function loadLessons() {
   return data?.map(l => l.insight).join('\n') || '';
 }
 module.exports = {
+  supabase, 
   connectDB, loadBotContext,
   logConversation, getClient, upsertClient,
   setEscalade, setDernierAgent,
