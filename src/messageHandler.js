@@ -2,7 +2,7 @@ const { generateResponse } = require('./ai');
 const {
   logConversation, getClient, upsertClient,
   setEscalade, setDernierAgent, resetHistory,
-  isBotActif, saveLesson
+  isBotActif, saveLesson, supabase
 } = require('./database');
 
 const AGENT_JID   = process.env.AGENT_PHONE + '@s.whatsapp.net';
@@ -17,15 +17,21 @@ function extractName(msg) {
 }
 
 async function isSilent(phone) {
-  const { data, error } = await require('./database').supabase
+  const { data, error } = await supabase
     .from('clients')
     .select('dernier_agent, escalade')
     .eq('phone', phone)
     .single();
 
-  console.log(`🔍 isSilent [${phone}]:`, data, error?.message);
+  if (error && error.code !== 'PGRST116') {
+    console.log(`🔍 isSilent erreur [${phone}]:`, error.message);
+    return false;
+  }
 
-  if (!data?.dernier_agent) return false;
+  if (!data?.dernier_agent) {
+    console.log(`🔍 isSilent [${phone}]: pas de dernier_agent`);
+    return false;
+  }
 
   const diff = (new Date() - new Date(data.dernier_agent)) / 1000 / 60;
   console.log(`⏱️ Silence depuis : ${diff.toFixed(1)} min`);
@@ -45,20 +51,28 @@ async function handleMessage(sock, msg) {
 
   console.log(`📨 [${clientName} +${clientPhone}]: ${userText}`);
 
-  // Vérifier si le bot est actif
+  // 1. Vérifier si le bot est actif
   const actif = await isBotActif();
   if (!actif) {
     console.log('🔴 Bot désactivé — message ignoré');
     return;
   }
 
-  await upsertClient(clientPhone, clientName);
-
-  // Mode silence actif ?
+  // 2. Vérifier le silence AVANT tout upsert
   if (await isSilent(clientPhone)) {
-    console.log(`🔇 Silence actif pour ${clientName}`);
+    console.log(`🔇 Silence actif pour ${clientName} — bot muet`);
     return;
   }
+
+  // 3. Mettre à jour le client seulement si le bot va répondre
+  // IMPORTANT : ne pas toucher à dernier_agent ici
+  await supabase
+    .from('clients')
+    .upsert({
+      phone: clientPhone,
+      nom: clientName,
+      last_contact: new Date().toISOString()
+    }, { onConflict: 'phone' });
 
   await sock.sendPresenceUpdate('composing', jid);
 
@@ -76,8 +90,6 @@ async function handleMessage(sock, msg) {
     }
 
     await logConversation(clientPhone, userText, aiReply);
-
-    // Apprentissage automatique toutes les 5 interactions
     await apprendreDeConversation(clientPhone, clientName, userText, aiReply);
 
   } catch (error) {
@@ -99,10 +111,10 @@ async function escaladeToHuman(sock, clientPhone, clientName, lastMessage) {
 
   const message =
     `🚨 *ESCALADE CLIENT — ACTION REQUISE*\n\n` +
-    `👤 *Nom*        : ${clientName}\n` +
-    `📞 *Numéro*     : +${clientPhone}\n` +
-    `🏷️ *Type*       : ${typeClient}\n` +
-    `📅 *1er contact*: ${firstContact}\n\n` +
+    `👤 *Nom*         : ${clientName}\n` +
+    `📞 *Numéro*      : +${clientPhone}\n` +
+    `🏷️ *Type*        : ${typeClient}\n` +
+    `📅 *1er contact* : ${firstContact}\n\n` +
     `💬 *Dernier message* :\n"${lastMessage}"\n\n` +
     `⚡ Le bot est désormais silencieux.\n` +
     `Répondez directement à ce client sur WhatsApp.`;
@@ -111,7 +123,6 @@ async function escaladeToHuman(sock, clientPhone, clientName, lastMessage) {
   console.log(`🔔 Escalade — ${clientName} (+${clientPhone})`);
 }
 
-// Apprentissage automatique
 async function apprendreDeConversation(phone, nom, userMsg, botReply) {
   try {
     const insight = await analyserEchange(userMsg, botReply);
@@ -120,7 +131,7 @@ async function apprendreDeConversation(phone, nom, userMsg, botReply) {
       console.log(`🧠 Apprentissage sauvegardé pour ${nom}`);
     }
   } catch (e) {
-    // Silencieux — l'apprentissage ne doit pas bloquer le bot
+    // Silencieux
   }
 }
 
@@ -137,12 +148,7 @@ async function analyserEchange(userMsg, botReply) {
       model: process.env.OPENROUTER_MODEL,
       messages: [{
         role: 'user',
-        content: `Analyse cet échange commercial et donne UNE leçon courte (max 2 phrases) pour mieux convertir ce type de prospect à l'avenir. Si aucune leçon utile, réponds NULL.
-
-Client : "${userMsg}"
-Bot : "${botReply}"
-
-Leçon :`
+        content: `Analyse cet échange commercial et donne UNE leçon courte (max 2 phrases) pour mieux convertir ce type de prospect à l'avenir. Si aucune leçon utile, réponds NULL.\n\nClient : "${userMsg}"\nBot : "${botReply}"\n\nLeçon :`
       }],
       max_tokens: 100,
       temperature: 0.3,
